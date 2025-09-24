@@ -37,7 +37,9 @@
 /// Representation independent color interace.
 ///
 /// Implemented by all `tint` color primitives.
-pub trait Color {
+pub trait Color:
+    From<Srgb> + From<LinearRgb> + From<Hsv> + Into<Srgb> + Into<LinearRgb> + Into<Hsv>
+{
     fn to_srgb(self) -> Srgb;
     fn to_linear(self) -> LinearRgb;
     fn to_hsv(self) -> Hsv;
@@ -159,6 +161,18 @@ impl Color for LinearRgb {
     }
 }
 
+impl From<Srgb> for LinearRgb {
+    fn from(value: Srgb) -> Self {
+        value.to_linear()
+    }
+}
+
+impl From<Hsv> for LinearRgb {
+    fn from(value: Hsv) -> Self {
+        value.to_linear()
+    }
+}
+
 macro_rules! channel_wise {
     ($ident:ident, $fn:ident, $op:tt) => {
         impl core::ops::$ident for LinearRgb {
@@ -267,6 +281,18 @@ impl Color for Srgb {
     }
 }
 
+impl From<LinearRgb> for Srgb {
+    fn from(value: LinearRgb) -> Self {
+        value.to_srgb()
+    }
+}
+
+impl From<Hsv> for Srgb {
+    fn from(value: Hsv) -> Self {
+        value.to_srgb()
+    }
+}
+
 /// A color within the [HSV colorspace].
 ///
 /// [`Hsv`] is a cylindrical-coordinate representation of red, green, and blue
@@ -364,6 +390,18 @@ impl Color for Hsv {
 
     fn to_hsv(self) -> Hsv {
         self
+    }
+}
+
+impl From<Srgb> for Hsv {
+    fn from(value: Srgb) -> Self {
+        value.to_hsv()
+    }
+}
+
+impl From<LinearRgb> for Hsv {
+    fn from(value: LinearRgb) -> Self {
+        value.to_hsv()
     }
 }
 
