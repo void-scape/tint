@@ -1,3 +1,37 @@
+//! *Tint* is a `no_std` library that uses lookup tables for colorspace conversions.
+//!
+//! ## Example
+//!
+//! ```rust
+//! let srgb = Srgb::rgb(r, g, b);
+//! let mut linear = srgb.to_linear();
+//! linear *= 0.5;
+//! let srgb = linear.to_srgb();
+//! ```
+//!
+//! ## Motivation
+//!
+//! I wrote a [software rasterizer called rast](https://github.com/void-scape/rast)
+//! that needed to convert between the sRGB and Linear RGB color spaces without crippling
+//! performance.
+//!
+//! ## Conversions
+//!
+//! The `Srgb` to `LinearRgb` conversion is performed with a loss-less, 256 byte lookup table
+//! index for each color component (red, green, and blue). Likewise, the `LinearRgb` to `Srgb`
+//! conversion uses a lossy 3KB lookup table.
+//!
+//! Round trip conversions from `Srgb` to `LinearRgb` and back to `Srgb` are garaunteed
+//! to have a maximum error of 1 for each color component.
+//!
+//! ## Performance
+//!
+//! Conversions with `Hsv` are not optimized.
+//!
+//! Converting between `Srgb` and `LinearRgb` is an order of magnitude faster than alternatives
+//! that directly compute gamma correction.
+// TODO: performance measurements
+
 #![no_std]
 
 /// Representation independent color interace.
@@ -333,7 +367,7 @@ impl Color for Hsv {
     }
 }
 
-/// Look-up table for SRGB to LinearRGB color conversion.
+/// Lookup table for SRGB to LinearRGB color conversion.
 ///
 /// Converts one SRGB component to a LinearRGB component. Since each SRGB
 /// component is a byte, the table is populated with 256 values thereby making
@@ -609,7 +643,7 @@ pub const SRGB_TO_LINEAR_COMPONENT_LUT: [f32; 256] = [
     1.0,
 ];
 
-/// Size of the [`LinearRgb`] to [`Srgb`] look-up table.
+/// Size of the [`LinearRgb`] to [`Srgb`] lookup table.
 ///
 /// This is the smallest possible set of conversions that provides a 1-1
 /// `sRGB -> Linear -> sRGB` and `sRGB -> HSV -> sRGB` conversion with a maximum
@@ -620,7 +654,7 @@ pub const SRGB_TO_LINEAR_COMPONENT_LUT: [f32; 256] = [
 /// then convert back into an [`Srgb`] to be displayed, written, or saved.
 pub const LINEAR_TO_SRGB_COMPONENT_LUT_SIZE: usize = 3000;
 
-/// Look-up table for LinearRGB to SRGB color conversion.
+/// Lookup table for LinearRGB to SRGB color conversion.
 ///
 /// Converts one LinearRGB component to a SRGB component. Since each LinearRGB
 /// component is a floating point number between 0.0 and 1.0, the conversion to
