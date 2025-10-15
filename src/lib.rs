@@ -105,11 +105,12 @@ impl LinearRgb {
 
 impl Color for LinearRgb {
     #[inline]
+    #[track_caller]
     fn to_srgb(self) -> Srgb {
-        debug_assert!((0.0..=1.0).contains(&self.r));
-        debug_assert!((0.0..=1.0).contains(&self.g));
-        debug_assert!((0.0..=1.0).contains(&self.b));
-        debug_assert!((0.0..=1.0).contains(&self.a));
+        debug_assert!(0.0 <= self.r && self.r <= 1.0);
+        debug_assert!(0.0 <= self.g && self.g <= 1.0);
+        debug_assert!(0.0 <= self.b && self.b <= 1.0);
+        debug_assert!(0.0 <= self.a && self.a <= 1.0);
 
         const RANGE: f32 = (LINEAR_TO_SRGB_COMPONENT_LUT_SIZE - 1) as f32;
         Srgb::new(
@@ -126,10 +127,10 @@ impl Color for LinearRgb {
     }
 
     fn to_hsv(self) -> Hsv {
-        debug_assert!((0.0..=1.0).contains(&self.r));
-        debug_assert!((0.0..=1.0).contains(&self.g));
-        debug_assert!((0.0..=1.0).contains(&self.b));
-        debug_assert!((0.0..=1.0).contains(&self.a));
+        debug_assert!(0.0 <= self.r && self.r <= 1.0);
+        debug_assert!(0.0 <= self.g && self.g <= 1.0);
+        debug_assert!(0.0 <= self.b && self.b <= 1.0);
+        debug_assert!(0.0 <= self.a && self.a <= 1.0);
 
         // Derivation: https://en.wikipedia.org/wiki/HSL_and_HSV#From_RGB
         let max = self.r.max(self.g).max(self.b);
@@ -153,9 +154,9 @@ impl Color for LinearRgb {
             h += 1.0;
         }
 
-        debug_assert!((0.0..=1.0).contains(&h));
-        debug_assert!((0.0..=1.0).contains(&s));
-        debug_assert!((0.0..=1.0).contains(&v));
+        debug_assert!(0.0 <= h && h <= 1.0);
+        debug_assert!(0.0 <= s && s <= 1.0);
+        debug_assert!(0.0 <= v && v <= 1.0);
 
         Hsv { h, s, v, a: self.a }
     }
@@ -282,6 +283,7 @@ impl Color for Srgb {
 }
 
 impl From<LinearRgb> for Srgb {
+    #[track_caller]
     fn from(value: LinearRgb) -> Self {
         value.to_srgb()
     }
@@ -357,10 +359,10 @@ impl Color for Hsv {
     }
 
     fn to_linear(self) -> LinearRgb {
-        debug_assert!((0.0..=1.0).contains(&self.h));
-        debug_assert!((0.0..=1.0).contains(&self.s));
-        debug_assert!((0.0..=1.0).contains(&self.v));
-        debug_assert!((0.0..=1.0).contains(&self.a));
+        debug_assert!(0.0 <= self.h && self.h <= 1.0);
+        debug_assert!(0.0 <= self.s && self.s <= 1.0);
+        debug_assert!(0.0 <= self.v && self.v <= 1.0);
+        debug_assert!(0.0 <= self.a && self.a <= 1.0);
 
         // Derivation: https://en.wikipedia.org/wiki/HSL_and_HSV#HSV_to_RGB
         let c = self.v * self.s;
@@ -376,9 +378,9 @@ impl Color for Hsv {
         };
 
         let m = self.v - c;
-        debug_assert!((0.0..=1.0).contains(&(r + m)));
-        debug_assert!((0.0..=1.0).contains(&(g + m)));
-        debug_assert!((0.0..=1.0).contains(&(b + m)));
+        debug_assert!(0.0 <= r + m && r + m <= 1.0);
+        debug_assert!(0.0 <= g + m && g + m <= 1.0);
+        debug_assert!(0.0 <= b + m && b + m <= 1.0);
 
         LinearRgb {
             r: r + m,
