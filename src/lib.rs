@@ -2,8 +2,12 @@
 //!
 //! ## Example
 //!
-//! ```rust
-//! let srgb = Srgb::rgb(r, g, b);
+//! ```
+//! # use tint::*;
+//! # let r = 0;
+//! # let g = 0;
+//! # let b = 0;
+//! let srgb = Srgb::from_rgb(r, g, b);
 //! let mut linear = srgb.to_linear();
 //! linear *= 0.5;
 //! let srgb = linear.to_srgb();
@@ -11,7 +15,7 @@
 //!
 //! ## Motivation
 //!
-//! I wrote a [software rasterizer called rast](https://github.com/void-scape/rast)
+//! I wrote a [software rasterizer called rast](https://github.com/void-scape/blaze)
 //! that needed to convert between the sRGB and Linear RGB color spaces without crippling
 //! performance.
 //!
@@ -30,19 +34,22 @@
 //!
 //! Converting between `Srgb` and `LinearRgb` is an order of magnitude faster than alternatives
 //! that directly compute gamma correction.
-// TODO: performance measurements
 
 #![no_std]
 
-/// Representation independent color interace.
+/// Representation independent color interface.
 ///
 /// Implemented by all `tint` color primitives.
 pub trait Color:
-    From<Srgb> + From<LinearRgb> + From<Hsv> + Into<Srgb> + Into<LinearRgb> + Into<Hsv>
+    Copy + From<Srgb> + From<LinearRgb> + From<Hsv> + Into<Srgb> + Into<LinearRgb> + Into<Hsv>
 {
     fn to_srgb(self) -> Srgb;
+    fn to_sbgr(self) -> Sbgr;
     fn to_linear(self) -> LinearRgb;
     fn to_hsv(self) -> Hsv;
+
+    fn alpha(&self) -> f32;
+    fn set_alpha(&mut self, alpha: f32);
 }
 
 /// A color within the [Linear sRGB colorspace].
@@ -54,6 +61,7 @@ pub trait Color:
 /// [Linear sRGB colorspace]: https://facelessuser.github.io/coloraide/colors/srgb_linear
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LinearRgb {
     r: f32,
     g: f32,
@@ -73,7 +81,7 @@ impl LinearRgb {
     }
 
     #[inline]
-    pub const fn rgb(r: f32, g: f32, b: f32) -> Self {
+    pub const fn from_rgb(r: f32, g: f32, b: f32) -> Self {
         Self::new(r, g, b, 1.0)
     }
 
@@ -122,6 +130,23 @@ impl Color for LinearRgb {
     }
 
     #[inline]
+    #[track_caller]
+    fn to_sbgr(self) -> Sbgr {
+        debug_assert!(0.0 <= self.r && self.r <= 1.0);
+        debug_assert!(0.0 <= self.g && self.g <= 1.0);
+        debug_assert!(0.0 <= self.b && self.b <= 1.0);
+        debug_assert!(0.0 <= self.a && self.a <= 1.0);
+
+        const RANGE: f32 = (LINEAR_TO_SRGB_COMPONENT_LUT_SIZE - 1) as f32;
+        Sbgr::new(
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.r * RANGE) as usize],
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.g * RANGE) as usize],
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.b * RANGE) as usize],
+            (self.a.clamp(0.0, 1.0) * 255.0) as u8,
+        )
+    }
+
+    #[inline]
     fn to_linear(self) -> LinearRgb {
         self
     }
@@ -154,16 +179,30 @@ impl Color for LinearRgb {
             h += 1.0;
         }
 
-        debug_assert!(0.0 <= h && h <= 1.0);
-        debug_assert!(0.0 <= s && s <= 1.0);
-        debug_assert!(0.0 <= v && v <= 1.0);
+        debug_assert!((0.0..=1.0).contains(&h));
+        debug_assert!((0.0..=1.0).contains(&s));
+        debug_assert!((0.0..=1.0).contains(&v));
 
         Hsv { h, s, v, a: self.a }
+    }
+
+    fn alpha(&self) -> f32 {
+        self.a
+    }
+
+    fn set_alpha(&mut self, alpha: f32) {
+        self.a = alpha.clamp(0.0, 1.0);
     }
 }
 
 impl From<Srgb> for LinearRgb {
     fn from(value: Srgb) -> Self {
+        value.to_linear()
+    }
+}
+
+impl From<Sbgr> for LinearRgb {
+    fn from(value: Sbgr) -> Self {
         value.to_linear()
     }
 }
@@ -183,7 +222,7 @@ macro_rules! channel_wise {
                     (self.r $op rhs.r).clamp(0.0, 1.0),
                     (self.g $op rhs.g).clamp(0.0, 1.0),
                     (self.b $op rhs.b).clamp(0.0, 1.0),
-                    (self.a $op rhs.a).clamp(0.0, 1.0),
+                    self.a,
                 )
             }
         }
@@ -195,7 +234,7 @@ macro_rules! channel_wise {
                     (self.r $op rhs).clamp(0.0, 1.0),
                     (self.g $op rhs).clamp(0.0, 1.0),
                     (self.b $op rhs).clamp(0.0, 1.0),
-                    (self.a $op rhs).clamp(0.0, 1.0),
+                    self.a,
                 )
             }
         }
@@ -207,64 +246,100 @@ channel_wise!(Sub, sub, -);
 channel_wise!(Mul, mul, *);
 channel_wise!(Div, div, /);
 
-/// A color within the [sRGB colorspace].
-///
-/// sRGB is gamma encoded. The red, green, and blue component light intensities
-/// are [non-linear]. Operations that expect to operate linearly over light intensity,
-/// such as mixing, must occur in [linear space](LinearRgb).
-///
-/// [sRGB colorspace]: https://en.wikipedia.org/wiki/SRGB
-/// [non-linear]: https://en.wikipedia.org/wiki/RGB_color_model#Nonlinearity
-#[repr(C)]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Srgb {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
+macro_rules! channel_wise_assign {
+    ($ident:ident, $fn:ident, $op:tt) => {
+        impl core::ops::$ident for LinearRgb {
+            fn $fn(&mut self, rhs: Self) {
+                self.r = (self.r $op rhs.r).clamp(0.0, 1.0);
+                self.g = (self.g $op rhs.g).clamp(0.0, 1.0);
+                self.b = (self.b $op rhs.b).clamp(0.0, 1.0);
+            }
+        }
+
+        impl core::ops::$ident<f32> for LinearRgb {
+            fn $fn(&mut self, rhs: f32) {
+                self.r = (self.r $op rhs).clamp(0.0, 1.0);
+                self.g = (self.g $op rhs).clamp(0.0, 1.0);
+                self.b = (self.b $op rhs).clamp(0.0, 1.0);
+            }
+        }
+    };
 }
 
-impl Srgb {
-    #[inline]
-    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
-        Self { r, g, b, a }
-    }
+channel_wise_assign!(AddAssign, add_assign, +);
+channel_wise_assign!(SubAssign, sub_assign, -);
+channel_wise_assign!(MulAssign, mul_assign, *);
+channel_wise_assign!(DivAssign, div_assign, /);
 
-    #[inline]
-    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
-        Self::new(r, g, b, 255)
-    }
+macro_rules! rgb_swizzle {
+    ($ident:ident, $c1:ident, $c2:ident, $c3:ident) => {
+        /// A color within the [sRGB colorspace].
+        ///
+        /// sRGB is gamma encoded. The red, green, and blue component light intensities
+        /// are [non-linear]. Operations that expect to operate linearly over light intensity,
+        /// such as mixing, must occur in [linear space](LinearRgb).
+        ///
+        /// [sRGB colorspace]: https://en.wikipedia.org/wiki/SRGB
+        /// [non-linear]: https://en.wikipedia.org/wiki/RGB_color_model#Nonlinearity
+        #[repr(C)]
+        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        pub struct $ident {
+            $c1: u8,
+            $c2: u8,
+            $c3: u8,
+            a: u8,
+        }
 
-    #[inline]
-    pub const fn to_array(self) -> [u8; 4] {
-        [self.r, self.g, self.b, self.a]
-    }
+        impl $ident {
+            #[inline]
+            pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+                Self { r, g, b, a }
+            }
 
-    #[inline]
-    pub fn r(&self) -> u8 {
-        self.r
-    }
+            #[inline]
+            pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+                Self::new(r, g, b, 255)
+            }
 
-    #[inline]
-    pub fn g(&self) -> u8 {
-        self.g
-    }
+            #[inline]
+            pub const fn to_array(self) -> [u8; 4] {
+                [self.$c1, self.$c2, self.$c3, self.a]
+            }
 
-    #[inline]
-    pub fn b(&self) -> u8 {
-        self.b
-    }
+            #[inline]
+            pub fn r(&self) -> u8 {
+                self.r
+            }
 
-    #[inline]
-    pub fn a(&self) -> u8 {
-        self.a
-    }
+            #[inline]
+            pub fn g(&self) -> u8 {
+                self.g
+            }
+
+            #[inline]
+            pub fn b(&self) -> u8 {
+                self.b
+            }
+
+            #[inline]
+            pub fn a(&self) -> u8 {
+                self.a
+            }
+        }
+    };
 }
 
+rgb_swizzle!(Srgb, r, g, b);
 impl Color for Srgb {
     #[inline]
     fn to_srgb(self) -> Srgb {
         self
+    }
+
+    #[inline]
+    fn to_sbgr(self) -> Sbgr {
+        Sbgr::new(self.r, self.g, self.b, self.a)
     }
 
     #[inline]
@@ -279,6 +354,21 @@ impl Color for Srgb {
 
     fn to_hsv(self) -> Hsv {
         self.to_linear().to_hsv()
+    }
+
+    fn alpha(&self) -> f32 {
+        self.a as f32 / u8::MAX as f32
+    }
+
+    fn set_alpha(&mut self, alpha: f32) {
+        self.a = (alpha.clamp(0.0, 1.0) * u8::MAX as f32) as u8;
+    }
+}
+
+impl From<Sbgr> for Srgb {
+    #[track_caller]
+    fn from(value: Sbgr) -> Self {
+        value.to_srgb()
     }
 }
 
@@ -295,6 +385,60 @@ impl From<Hsv> for Srgb {
     }
 }
 
+rgb_swizzle!(Sbgr, b, g, r);
+impl Color for Sbgr {
+    #[inline]
+    fn to_srgb(self) -> Srgb {
+        Srgb::new(self.r, self.g, self.b, self.a)
+    }
+
+    #[inline]
+    fn to_sbgr(self) -> Sbgr {
+        self
+    }
+
+    #[inline]
+    fn to_linear(self) -> LinearRgb {
+        LinearRgb {
+            r: SRGB_TO_LINEAR_COMPONENT_LUT[self.r as usize],
+            g: SRGB_TO_LINEAR_COMPONENT_LUT[self.g as usize],
+            b: SRGB_TO_LINEAR_COMPONENT_LUT[self.b as usize],
+            a: self.a as f32 / 255.0,
+        }
+    }
+
+    fn to_hsv(self) -> Hsv {
+        self.to_linear().to_hsv()
+    }
+
+    fn alpha(&self) -> f32 {
+        self.a as f32 / u8::MAX as f32
+    }
+
+    fn set_alpha(&mut self, alpha: f32) {
+        self.a = (alpha.clamp(0.0, 1.0) * u8::MAX as f32) as u8;
+    }
+}
+
+impl From<Srgb> for Sbgr {
+    fn from(value: Srgb) -> Self {
+        Self::new(value.r, value.g, value.b, value.a)
+    }
+}
+
+impl From<LinearRgb> for Sbgr {
+    #[track_caller]
+    fn from(value: LinearRgb) -> Self {
+        Self::from(value.to_srgb())
+    }
+}
+
+impl From<Hsv> for Sbgr {
+    fn from(value: Hsv) -> Self {
+        Self::from(value.to_srgb())
+    }
+}
+
 /// A color within the [HSV colorspace].
 ///
 /// [`Hsv`] is a cylindrical-coordinate representation of red, green, and blue
@@ -304,6 +448,7 @@ impl From<Hsv> for Srgb {
 /// [HSV colorspace]: https://en.wikipedia.org/wiki/HSL_and_HSV
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hsv {
     h: f32,
     s: f32,
@@ -323,7 +468,7 @@ impl Hsv {
     }
 
     #[inline]
-    pub const fn hsv(h: f32, s: f32, v: f32) -> Self {
+    pub const fn from_hsv(h: f32, s: f32, v: f32) -> Self {
         Self::new(h, s, v, 1.0)
     }
 
@@ -356,6 +501,10 @@ impl Hsv {
 impl Color for Hsv {
     fn to_srgb(self) -> Srgb {
         self.to_linear().to_srgb()
+    }
+
+    fn to_sbgr(self) -> Sbgr {
+        self.to_linear().to_sbgr()
     }
 
     fn to_linear(self) -> LinearRgb {
@@ -393,10 +542,24 @@ impl Color for Hsv {
     fn to_hsv(self) -> Hsv {
         self
     }
+
+    fn alpha(&self) -> f32 {
+        self.a
+    }
+
+    fn set_alpha(&mut self, alpha: f32) {
+        self.a = alpha.clamp(0.0, 1.0);
+    }
 }
 
 impl From<Srgb> for Hsv {
     fn from(value: Srgb) -> Self {
+        value.to_hsv()
+    }
+}
+
+impl From<Sbgr> for Hsv {
+    fn from(value: Sbgr) -> Self {
         value.to_hsv()
     }
 }
@@ -878,7 +1041,7 @@ mod test {
     #[test]
     fn linear_roundtrip() {
         srgb_cube(|r, g, b| {
-            let srgb = Srgb::rgb(r, g, b);
+            let srgb = Srgb::from_rgb(r, g, b);
             let linear = srgb.to_linear();
             linear.to_srgb()
         });
@@ -887,7 +1050,7 @@ mod test {
     #[test]
     fn hsv_roundtrip() {
         srgb_cube(|r, g, b| {
-            let srgb = Srgb::rgb(r, g, b);
+            let srgb = Srgb::from_rgb(r, g, b);
             let hsv = srgb.to_hsv();
             hsv.to_srgb()
         });
