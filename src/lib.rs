@@ -53,21 +53,16 @@ pub trait Color:
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LinearRgb {
-    r: f32,
-    g: f32,
-    b: f32,
-    a: f32,
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
 }
 
 impl LinearRgb {
     #[inline]
     pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self {
-            r: r.clamp(0.0, 1.0),
-            g: g.clamp(0.0, 1.0),
-            b: b.clamp(0.0, 1.0),
-            a: a.clamp(0.0, 1.0),
-        }
+        Self { r, g, b, a }
     }
 
     #[inline]
@@ -79,42 +74,17 @@ impl LinearRgb {
     pub const fn to_array(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
     }
-
-    #[inline]
-    pub fn r(&self) -> f32 {
-        self.r
-    }
-
-    #[inline]
-    pub fn g(&self) -> f32 {
-        self.g
-    }
-
-    #[inline]
-    pub fn b(&self) -> f32 {
-        self.b
-    }
-
-    #[inline]
-    pub fn a(&self) -> f32 {
-        self.a
-    }
 }
 
 impl Color for LinearRgb {
     #[inline]
     #[track_caller]
     fn to_srgb(self) -> Srgb {
-        debug_assert!(0.0 <= self.r && self.r <= 1.0);
-        debug_assert!(0.0 <= self.g && self.g <= 1.0);
-        debug_assert!(0.0 <= self.b && self.b <= 1.0);
-        debug_assert!(0.0 <= self.a && self.a <= 1.0);
-
         const RANGE: f32 = (LINEAR_TO_SRGB_COMPONENT_LUT_SIZE - 1) as f32;
         Srgb::new(
-            LINEAR_TO_SRGB_COMPONENT_LUT[(self.r * RANGE) as usize],
-            LINEAR_TO_SRGB_COMPONENT_LUT[(self.g * RANGE) as usize],
-            LINEAR_TO_SRGB_COMPONENT_LUT[(self.b * RANGE) as usize],
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.r.clamp(0.0, 1.0) * RANGE) as usize],
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.g.clamp(0.0, 1.0) * RANGE) as usize],
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.b.clamp(0.0, 1.0) * RANGE) as usize],
             (self.a.clamp(0.0, 1.0) * 255.0) as u8,
         )
     }
@@ -122,16 +92,11 @@ impl Color for LinearRgb {
     #[inline]
     #[track_caller]
     fn to_sbgr(self) -> Sbgr {
-        debug_assert!(0.0 <= self.r && self.r <= 1.0);
-        debug_assert!(0.0 <= self.g && self.g <= 1.0);
-        debug_assert!(0.0 <= self.b && self.b <= 1.0);
-        debug_assert!(0.0 <= self.a && self.a <= 1.0);
-
         const RANGE: f32 = (LINEAR_TO_SRGB_COMPONENT_LUT_SIZE - 1) as f32;
         Sbgr::new(
-            LINEAR_TO_SRGB_COMPONENT_LUT[(self.r * RANGE) as usize],
-            LINEAR_TO_SRGB_COMPONENT_LUT[(self.g * RANGE) as usize],
-            LINEAR_TO_SRGB_COMPONENT_LUT[(self.b * RANGE) as usize],
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.r.clamp(0.0, 1.0) * RANGE) as usize],
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.g.clamp(0.0, 1.0) * RANGE) as usize],
+            LINEAR_TO_SRGB_COMPONENT_LUT[(self.b.clamp(0.0, 1.0) * RANGE) as usize],
             (self.a.clamp(0.0, 1.0) * 255.0) as u8,
         )
     }
@@ -141,11 +106,11 @@ impl Color for LinearRgb {
         self
     }
 
-    fn to_hsv(self) -> Hsv {
-        debug_assert!(0.0 <= self.r && self.r <= 1.0);
-        debug_assert!(0.0 <= self.g && self.g <= 1.0);
-        debug_assert!(0.0 <= self.b && self.b <= 1.0);
-        debug_assert!(0.0 <= self.a && self.a <= 1.0);
+    fn to_hsv(mut self) -> Hsv {
+        self.r = self.r.clamp(0.0, 1.0);
+        self.g = self.g.clamp(0.0, 1.0);
+        self.b = self.b.clamp(0.0, 1.0);
+        self.a = self.a.clamp(0.0, 1.0);
 
         // Derivation: https://en.wikipedia.org/wiki/HSL_and_HSV#From_RGB
         let max = self.r.max(self.g).max(self.b);
@@ -209,9 +174,9 @@ macro_rules! channel_wise {
             type Output = Self;
             fn $fn(self, rhs: Self) -> Self::Output {
                 Self::new(
-                    (self.r $op rhs.r).clamp(0.0, 1.0),
-                    (self.g $op rhs.g).clamp(0.0, 1.0),
-                    (self.b $op rhs.b).clamp(0.0, 1.0),
+                    self.r $op rhs.r,
+                    self.g $op rhs.g,
+                    self.b $op rhs.b,
                     self.a,
                 )
             }
@@ -221,9 +186,9 @@ macro_rules! channel_wise {
             type Output = Self;
             fn $fn(self, rhs: f32) -> Self::Output {
                 Self::new(
-                    (self.r $op rhs).clamp(0.0, 1.0),
-                    (self.g $op rhs).clamp(0.0, 1.0),
-                    (self.b $op rhs).clamp(0.0, 1.0),
+                    self.r $op rhs,
+                    self.g $op rhs,
+                    self.b $op rhs,
                     self.a,
                 )
             }
@@ -240,17 +205,17 @@ macro_rules! channel_wise_assign {
     ($ident:ident, $fn:ident, $op:tt) => {
         impl core::ops::$ident for LinearRgb {
             fn $fn(&mut self, rhs: Self) {
-                self.r = (self.r $op rhs.r).clamp(0.0, 1.0);
-                self.g = (self.g $op rhs.g).clamp(0.0, 1.0);
-                self.b = (self.b $op rhs.b).clamp(0.0, 1.0);
+                self.r = self.r $op rhs.r;
+                self.g = self.g $op rhs.g;
+                self.b = self.b $op rhs.b;
             }
         }
 
         impl core::ops::$ident<f32> for LinearRgb {
             fn $fn(&mut self, rhs: f32) {
-                self.r = (self.r $op rhs).clamp(0.0, 1.0);
-                self.g = (self.g $op rhs).clamp(0.0, 1.0);
-                self.b = (self.b $op rhs).clamp(0.0, 1.0);
+                self.r = self.r $op rhs;
+                self.g = self.g $op rhs;
+                self.b = self.b $op rhs;
             }
         }
     };
@@ -260,6 +225,15 @@ channel_wise_assign!(AddAssign, add_assign, +);
 channel_wise_assign!(SubAssign, sub_assign, -);
 channel_wise_assign!(MulAssign, mul_assign, *);
 channel_wise_assign!(DivAssign, div_assign, /);
+
+macro_rules! pack {
+    ($self:ident, $c1:ident, $c2:ident, $c3:ident, $c4:ident) => {
+        (($self.$c1 as u32) << 24)
+            | (($self.$c2 as u32) << 16)
+            | (($self.$c3 as u32) << 8)
+            | ($self.$c4 as u32)
+    };
+}
 
 macro_rules! rgb_swizzle {
     ($ident:ident, $c1:ident, $c2:ident, $c3:ident) => {
@@ -275,10 +249,10 @@ macro_rules! rgb_swizzle {
         #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct $ident {
-            $c1: u8,
-            $c2: u8,
-            $c3: u8,
-            a: u8,
+            pub $c1: u8,
+            pub $c2: u8,
+            pub $c3: u8,
+            pub a: u8,
         }
 
         impl $ident {
@@ -298,23 +272,23 @@ macro_rules! rgb_swizzle {
             }
 
             #[inline]
-            pub fn r(&self) -> u8 {
-                self.r
+            pub const fn pack_argb(self) -> u32 {
+                pack!(self, a, r, g, b)
             }
 
             #[inline]
-            pub fn g(&self) -> u8 {
-                self.g
+            pub const fn pack_rgba(self) -> u32 {
+                pack!(self, r, g, b, a)
             }
 
             #[inline]
-            pub fn b(&self) -> u8 {
-                self.b
+            pub const fn pack_abgr(self) -> u32 {
+                pack!(self, a, b, g, r)
             }
 
             #[inline]
-            pub fn a(&self) -> u8 {
-                self.a
+            pub const fn pack_bgra(self) -> u32 {
+                pack!(self, b, g, r, a)
             }
         }
     };
@@ -440,21 +414,16 @@ impl From<Hsv> for Sbgr {
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hsv {
-    h: f32,
-    s: f32,
-    v: f32,
-    a: f32,
+    pub h: f32,
+    pub s: f32,
+    pub v: f32,
+    pub a: f32,
 }
 
 impl Hsv {
     #[inline]
     pub const fn new(h: f32, s: f32, v: f32, a: f32) -> Self {
-        Self {
-            h: h.clamp(0.0, 1.0),
-            s: s.clamp(0.0, 1.0),
-            v: v.clamp(0.0, 1.0),
-            a: a.clamp(0.0, 1.0),
-        }
+        Self { h, s, v, a }
     }
 
     #[inline]
@@ -465,26 +434,6 @@ impl Hsv {
     #[inline]
     pub const fn to_array(self) -> [f32; 4] {
         [self.h, self.s, self.v, self.a]
-    }
-
-    #[inline]
-    pub fn h(&self) -> f32 {
-        self.h
-    }
-
-    #[inline]
-    pub fn s(&self) -> f32 {
-        self.s
-    }
-
-    #[inline]
-    pub fn v(&self) -> f32 {
-        self.v
-    }
-
-    #[inline]
-    pub fn a(&self) -> f32 {
-        self.a
     }
 }
 
@@ -497,11 +446,11 @@ impl Color for Hsv {
         self.to_linear().to_sbgr()
     }
 
-    fn to_linear(self) -> LinearRgb {
-        debug_assert!(0.0 <= self.h && self.h <= 1.0);
-        debug_assert!(0.0 <= self.s && self.s <= 1.0);
-        debug_assert!(0.0 <= self.v && self.v <= 1.0);
-        debug_assert!(0.0 <= self.a && self.a <= 1.0);
+    fn to_linear(mut self) -> LinearRgb {
+        self.h = self.h.clamp(0.0, 1.0);
+        self.s = self.s.clamp(0.0, 1.0);
+        self.v = self.v.clamp(0.0, 1.0);
+        self.a = self.a.clamp(0.0, 1.0);
 
         // Derivation: https://en.wikipedia.org/wiki/HSL_and_HSV#HSV_to_RGB
         let c = self.v * self.s;
